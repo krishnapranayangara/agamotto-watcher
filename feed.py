@@ -25,6 +25,8 @@ CRAWLERS = (
 )
 SOURCES = ("dice", "linkedin", "simplyhired", "boards")
 LOCK = threading.Lock()
+WATCHER = threading.Event()
+WATCHER.set()
 CACHE = {
     "updated": "",
     "label": "Watching for jobs…",
@@ -226,9 +228,23 @@ def publish(notes):
         CACHE["notes"] = notes
 
 
+def watcher_running():
+    return WATCHER.is_set()
+
+
+def set_watcher(running):
+    if running:
+        WATCHER.set()
+    else:
+        WATCHER.clear()
+    return watcher_running()
+
+
 def snapshot():
     with LOCK:
-        return json.loads(json.dumps(CACHE))
+        payload = json.loads(json.dumps(CACHE))
+    payload["running"] = watcher_running()
+    return payload
 
 
 def linkedin_jobs(page, category, now):
@@ -595,6 +611,9 @@ def maybe_alert(opened):
 def crawl_forever(crawler):
     slot = 0
     while True:
+        if not WATCHER.is_set():
+            time.sleep(1)
+            continue
         source = SOURCES[slot % len(SOURCES)]
         query_slot = slot // len(SOURCES)
         query = crawler["queries"][query_slot % len(crawler["queries"])]

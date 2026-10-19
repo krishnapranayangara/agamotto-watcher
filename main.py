@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from alerts import add_subscriber, mail_ready
-from feed import snapshot, watch
+from feed import set_watcher, snapshot, watch
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "website" / "kforce-boomi-integration.html"
@@ -37,6 +37,10 @@ class SubscribeIn(BaseModel):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+class WatcherIn(BaseModel):
+    running: bool
+
+
 def load_decisions():
     if not DECISIONS.exists():
         return {}
@@ -58,6 +62,16 @@ def start_watch() -> None:
 @app.get("/api/jobs")
 def jobs():
     return snapshot()
+
+
+@app.get("/api/watcher")
+def watcher():
+    return {"running": snapshot()["running"]}
+
+
+@app.post("/api/watcher")
+def update_watcher(body: WatcherIn):
+    return {"running": set_watcher(body.running)}
 
 
 @app.get("/api/decisions")
