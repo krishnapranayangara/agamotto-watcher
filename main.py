@@ -102,7 +102,9 @@ def health():
 
 @app.get("/")
 def website():
-    return FileResponse(PAGE)
+    if PAGE.exists():
+        return FileResponse(PAGE)
+    return {"ok": True, "service": "agamotto-watcher"}
 
 
 @app.get("/agamotto.svg")
