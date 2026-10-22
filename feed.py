@@ -21,7 +21,6 @@ CRAWLERS = (
     {"id": "boomi", "label": "Boomi", "queries": ("Boomi", "Dell Boomi", "Boomi developer", "Boomi architect")},
     {"id": "react-python", "label": "Full stack (React, Python)", "queries": ("full stack React Python", "React Django", "React FastAPI", "React Flask developer")},
     {"id": "react-java", "label": "Full stack (React, Java Spring Boot)", "queries": ("React Spring Boot", "full stack React Java", "React Java developer", "Java Spring Boot React")},
-    {"id": "qa-playwright", "label": "QA Test Engineer / Automation (Playwright)", "queries": ("Playwright QA", "Playwright SDET", "Playwright automation", "Playwright test engineer")},
     {"id": "flutter", "label": "Flutter", "queries": ("Flutter developer", "Flutter engineer", "Flutter mobile developer", "Dart Flutter developer")},
 )
 SOURCES = ("dice", "linkedin", "simplyhired", "boards")
@@ -32,7 +31,7 @@ CACHE = {
     "updated": "",
     "label": "Watching for jobs…",
     "jobs": [],
-    "notes": ["Five crawlers are checking Dice, LinkedIn, SimplyHired, and the public remote boards."],
+    "notes": ["Four crawlers are checking Dice, LinkedIn, SimplyHired, and the public remote boards."],
 }
 JOBS = {}
 STARTED = time.monotonic()
@@ -53,8 +52,6 @@ def matches_category(category, title, summary=""):
         return re.search(r"\breact(?:\.?js)?\b", text, re.I) is not None and (
             re.search(r"\bjava\b", text, re.I) is not None or re.search(r"\bspring(?:\s|-)?boot\b", text, re.I) is not None
         )
-    if category == "qa-playwright":
-        return re.search(r"\bplaywright\b", text, re.I) is not None and re.search(r"\b(qa|quality|sdet|tester|test|automation)\b", text, re.I) is not None
     if category == "flutter":
         return re.search(r"\bflutter\b", text, re.I) is not None
     if category == "ai-engineer":
@@ -65,8 +62,6 @@ def matches_category(category, title, summary=""):
 def classify(title, summary=""):
     if re.search(r"\bboomi\b", title, re.I):
         return "boomi"
-    if matches_category("qa-playwright", title, summary):
-        return "qa-playwright"
     if re.search(r"\bflutter\b", title, re.I):
         return "flutter"
     python = matches_category("react-python", title, summary)
@@ -543,7 +538,7 @@ def block_field(block, tag):
 def devit_jobs(xml, now):
     found = []
     seen = set()
-    for needle in ("boomi", "Boomi", "playwright", "Playwright", "React", "react", "Django", "FastAPI", "Spring Boot"):
+    for needle in ("boomi", "Boomi", "React", "react", "Django", "FastAPI", "Spring Boot", "Flutter", "flutter"):
         start_at = 0
         while True:
             at = xml.find(needle, start_at)
