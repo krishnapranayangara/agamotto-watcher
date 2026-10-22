@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Four crawlers that keep the past week of matching roles in the job feed."""
+"""Crawlers that keep the past week of matching roles in the job feed."""
 
 import html
 import json
@@ -22,6 +22,7 @@ CRAWLERS = (
     {"id": "react-python", "label": "Full stack (React, Python)", "queries": ("full stack React Python", "React Django", "React FastAPI", "React Flask developer")},
     {"id": "react-java", "label": "Full stack (React, Java Spring Boot)", "queries": ("React Spring Boot", "full stack React Java", "React Java developer", "Java Spring Boot React")},
     {"id": "qa-playwright", "label": "QA Test Engineer / Automation (Playwright)", "queries": ("Playwright QA", "Playwright SDET", "Playwright automation", "Playwright test engineer")},
+    {"id": "flutter", "label": "Flutter", "queries": ("Flutter developer", "Flutter engineer", "Flutter mobile developer", "Dart Flutter developer")},
 )
 SOURCES = ("dice", "linkedin", "simplyhired", "boards")
 LOCK = threading.Lock()
@@ -31,7 +32,7 @@ CACHE = {
     "updated": "",
     "label": "Watching for jobs…",
     "jobs": [],
-    "notes": ["Four crawlers are checking Dice, LinkedIn, SimplyHired, and the public remote boards."],
+    "notes": ["Five crawlers are checking Dice, LinkedIn, SimplyHired, and the public remote boards."],
 }
 JOBS = {}
 STARTED = time.monotonic()
@@ -54,6 +55,8 @@ def matches_category(category, title, summary=""):
         )
     if category == "qa-playwright":
         return re.search(r"\bplaywright\b", text, re.I) is not None and re.search(r"\b(qa|quality|sdet|tester|test|automation)\b", text, re.I) is not None
+    if category == "flutter":
+        return re.search(r"\bflutter\b", text, re.I) is not None
     if category == "ai-engineer":
         return re.search(r"\b(ai|artificial intelligence|machine learning|llm)\b", text, re.I) is not None and re.search(r"\bengineer\b", title, re.I) is not None
     return False
@@ -64,6 +67,8 @@ def classify(title, summary=""):
         return "boomi"
     if matches_category("qa-playwright", title, summary):
         return "qa-playwright"
+    if re.search(r"\bflutter\b", title, re.I):
+        return "flutter"
     python = matches_category("react-python", title, summary)
     java = matches_category("react-java", title, summary)
     if python and java:
@@ -78,6 +83,8 @@ def classify(title, summary=""):
         return "react-java"
     if matches_category("boomi", title, summary):
         return "boomi"
+    if matches_category("flutter", title, summary):
+        return "flutter"
     return ""
 
 
@@ -210,16 +217,27 @@ def remember(jobs):
     return added
 
 
+KEEP_PER_CATEGORY = 30
+
+
 def publish(notes):
     now = datetime.now(timezone.utc)
     with LOCK:
-        fresh = []
+        grouped = {}
         for job in list(JOBS.values()):
             posted = datetime.fromisoformat(job["postedAt"])
-            if now - aware(posted) <= WEEK:
-                fresh.append(job)
-            else:
+            if now - aware(posted) > WEEK:
                 JOBS.pop(job["id"], None)
+                continue
+            grouped.setdefault(job.get("category") or "", []).append(job)
+        keep_ids = set()
+        for jobs in grouped.values():
+            jobs.sort(key=lambda job: datetime.fromisoformat(job["postedAt"]), reverse=True)
+            keep_ids.update(job["id"] for job in jobs[:KEEP_PER_CATEGORY])
+        for job_id in list(JOBS):
+            if job_id not in keep_ids:
+                JOBS.pop(job_id, None)
+        fresh = [JOBS[job_id] for job_id in keep_ids]
         fresh.sort(key=lambda job: datetime.fromisoformat(job["postedAt"]), reverse=True)
         local = now.astimezone(EASTERN)
         CACHE["jobs"] = fresh
@@ -608,44 +626,57 @@ def maybe_alert(opened):
         send_alert(opened)
 
 
+PASS_INTERVAL = 60 * 60
+
+
+def publish_pass(opened, notes):
+    maybe_alert(opened)
+    with LOCK:
+        counts = {item["label"]: sum(1 for job in JOBS.values() if job["category"] == item["id"]) for item in CRAWLERS}
+    notes.append("This week: " + ", ".join(f"{label} {count}" for label, count in counts.items()))
+    publish(notes)
+
+
+def crawl_pass(crawler):
+    opened = []
+    notes = [f"{crawler['label']} crawler"]
+    now = datetime.now(timezone.utc)
+    for query_slot, query in enumerate(crawler["queries"]):
+        for source in SOURCES:
+            if not WATCHER.is_set():
+                publish_pass(opened, notes)
+                return
+            try:
+                if source == "boards":
+                    if crawler["id"] != "boomi":
+                        continue
+                    found, board_notes = public_boards(now)
+                    opened.extend(remember(found))
+                    notes.extend(board_notes)
+                else:
+                    found = search_source(source, crawler["id"], query, query_slot, now)
+                    opened.extend(remember(found))
+                    notes.append(f"{crawler['label']}: {len(found)} from {source} “{query}”")
+                    if crawler["id"] == "boomi":
+                        extra = search_source(source, "ai-engineer", "AI Engineer", query_slot, now)
+                        opened.extend(remember(extra))
+                        if extra:
+                            notes.append(f"AI Engineer: {len(extra)} from {source}")
+            except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, ValueError, KeyError) as error:
+                notes.append(f"{crawler['label']}: {source} {error.__class__.__name__}")
+    publish_pass(opened, notes)
+
+
 def crawl_forever(crawler):
-    slot = 0
     while True:
         if not WATCHER.is_set():
             time.sleep(1)
             continue
-        source = SOURCES[slot % len(SOURCES)]
-        query_slot = slot // len(SOURCES)
-        query = crawler["queries"][query_slot % len(crawler["queries"])]
-        slot += 1
-        now = datetime.now(timezone.utc)
-        notes = [f"{crawler['label']} crawler"]
-        opened = []
-        try:
-            if source == "boards":
-                if crawler["id"] != "boomi":
-                    time.sleep(20)
-                    continue
-                found, board_notes = public_boards(now)
-                opened.extend(remember(found))
-                notes.extend(board_notes)
-            else:
-                found = search_source(source, crawler["id"], query, query_slot, now)
-                opened.extend(remember(found))
-                notes.append(f"{crawler['label']}: {len(found)} from {source} “{query}”")
-                if crawler["id"] == "boomi":
-                    extra = search_source(source, "ai-engineer", "AI Engineer", query_slot, now)
-                    opened.extend(remember(extra))
-                    if extra:
-                        notes.append(f"AI Engineer: {len(extra)} from {source}")
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, ValueError, KeyError) as error:
-            notes.append(f"{crawler['label']}: {source} {error.__class__.__name__}")
-        maybe_alert(opened)
-        with LOCK:
-            counts = {item["label"]: sum(1 for job in JOBS.values() if job["category"] == item["id"]) for item in CRAWLERS}
-        notes.append("This week: " + ", ".join(f"{label} {count}" for label, count in counts.items()))
-        publish(notes)
-        time.sleep(20)
+        started = time.monotonic()
+        crawl_pass(crawler)
+        deadline = started + PASS_INTERVAL
+        while WATCHER.is_set() and time.monotonic() < deadline:
+            time.sleep(1)
 
 
 def watch():
