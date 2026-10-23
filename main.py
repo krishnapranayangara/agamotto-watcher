@@ -6,13 +6,14 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from alerts import add_subscriber, mail_ready
 from feed import set_watcher, snapshot, watch
+from identity import require_signed_in
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = ROOT / "website" / "agamotto-jobwatcher.html"
@@ -70,7 +71,7 @@ def watcher():
 
 
 @app.post("/api/watcher")
-def update_watcher(body: WatcherIn):
+def update_watcher(body: WatcherIn, _user: dict = Depends(require_signed_in)):
     return {"running": set_watcher(body.running)}
 
 
