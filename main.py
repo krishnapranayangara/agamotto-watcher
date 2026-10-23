@@ -15,7 +15,7 @@ from alerts import add_subscriber, mail_ready
 from feed import set_watcher, snapshot, watch
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE = ROOT / "website" / "kforce-boomi-integration.html"
+PAGE = ROOT / "website" / "agamotto-jobwatcher.html"
 DECISIONS = Path(__file__).resolve().parent / "decisions.json"
 EASTERN = ZoneInfo("America/New_York")
 ACTIONS = {"apply", "reject", "save", "share"}
